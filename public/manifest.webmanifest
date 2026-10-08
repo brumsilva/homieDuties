@@ -1,0 +1,12 @@
+{
+  "name": "Homie Duties",
+  "short_name": "Homie",
+  "description": "A shared little home for the things that make a house feel like home.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfaf8",
+  "theme_color": "#fbfaf8",
+  "icons": [
+    { "src": "favicon.ico", "sizes": "any", "type": "image/x-icon" }
+  ]
+}
