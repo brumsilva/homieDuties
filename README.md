@@ -73,7 +73,15 @@ A função de configuração cria usuários no Supabase Auth. Ela deriva uma sen
 - Um PIN de quatro dígitos tem somente 10 mil combinações. O segredo HMAC do servidor e o limite persistente de tentativas reduzem tentativas automatizadas, mas um PIN curto continua menos seguro que uma senha longa. Use PINs aleatórios e não compartilhe o PIN de administrador.
 - Não há rodízio automático de responsáveis. Qualquer morador pode concluir uma atividade disponível; o app registra imediatamente quem fez e os pontos definidos para ela.
 
-## Comandos
+## Animações e sons
+
+- Cartões, telas e diálogos têm entradas suaves; botões respondem ao toque. Concluir uma tarefa mostra os pontos ganhos e uma breve celebração.
+- Login, logout, criação/edição/exclusão, contestações e erros recebem mensagens visuais e tons curtos. Confirmações só aparecem após o sucesso da operação.
+- O botão de alto-falante na entrada e no cabeçalho permite silenciar. A preferência fica salva neste navegador. O áudio só começa após interação e não usa arquivos ou serviços externos.
+- A preferência de movimento reduzido do sistema desativa as animações e os confetes. Mensagens continuam disponíveis visualmente e para leitores de tela.
+- Implementação com [animações CSS do Angular](https://angular.dev/guide/animations) e [Web Audio](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Best_practices), sem dependências adicionais.
+
+## Comandos disponíveis
 
 ```sh
 npm start

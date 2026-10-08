@@ -70,3 +70,34 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .history-card { gap: 7px; }.history-main { flex-basis: calc(100% - 89px); }.proof-image, .proof-placeholder { flex-basis: 45px; width: 45px; height: 42px; }.contest-button, .dispute-status { margin-left: 31px; }
   .rooms-grid { grid-template-columns: 1fr 1fr; }.bottom-nav button small { font-size: 8px; }.topbar { padding-right: 12px; padding-left: 12px; }.live-indicator { font-size: 8px; }
 }
+
+/* Interaction feedback: small, finite motions with equivalent visual messages. */
+.surface-enter { animation: surface-arrive 240ms cubic-bezier(.2,.8,.2,1) both; }
+.backdrop-enter { animation: backdrop-arrive 160ms ease-out both; }
+.dialog-enter { animation: dialog-arrive 230ms cubic-bezier(.2,.8,.2,1) both; }
+.toast-enter { animation: surface-arrive 220ms ease-out both; }
+@keyframes surface-arrive { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes backdrop-arrive { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dialog-arrive { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+button { touch-action: manipulation; transition: transform 140ms ease, background-color 160ms ease, box-shadow 160ms ease; }
+button:not(:disabled):active { transform: scale(.97); }
+button:focus-visible { outline: 3px solid #75ad89; outline-offset: 3px; }
+@media (hover: hover) { .task-card, .room-card, .member-card { transition: box-shadow 180ms ease, border-color 180ms ease; } .task-card:hover, .room-card:hover, .member-card:hover { box-shadow: 0 8px 22px #3157410b; border-color: #bcd2c0; } }
+.sound-toggle { display: inline-grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; border: 1px solid #e1e8df; border-radius: 13px; background: #fff; color: #447458; cursor: pointer; }
+.sound-toggle .material-symbols-rounded { font-size: 21px; }
+.sound-toggle[aria-pressed="false"] { color: #7d877f; background: #f2f3ef; }
+.auth-sound { display: flex; align-items: center; gap: 9px; margin-top: 16px; color: #647169; font-size: 12px; }
+.feedback-live { position: fixed; z-index: 40; inset: auto 20px 24px; pointer-events: none; display: flex; justify-content: center; }
+.feedback-toast { position: relative; display: flex; align-items: center; gap: 10px; width: min(100%,460px); min-height: 62px; padding: 12px 10px 12px 16px; border: 1px solid #c9e2d0; border-radius: 17px; background: #f5fff8; color: #275b40; box-shadow: 0 10px 40px #183c3326; pointer-events: auto; }
+.feedback-toast strong { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.feedback-symbol { flex: 0 0 26px; font-size: 26px; }
+.feedback-toast button { display: grid; flex: 0 0 44px; place-items: center; height: 44px; border: 0; border-radius: 11px; color: inherit; background: transparent; cursor: pointer; }
+.feedback-error { background: #fff7f1; color: #8a4733; border-color: #edcabb; }
+.celebration { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.celebration i { position: absolute; top: 0; width: 7px; height: 11px; border-radius: 2px; opacity: 0; animation: points-confetti 800ms ease-out both; }
+@keyframes points-confetti { 0% { opacity: 0; transform: translateY(0) rotate(0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translateY(-110px) rotate(var(--rotation)); } }
+.action-progress { position: fixed; z-index: 45; top: max(12px,env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 9px 15px; border: 1px solid #d7e2d7; border-radius: 99px; background: #fffefb; color: #526455; box-shadow: 0 4px 20px #203e2415; font-size: 12px; pointer-events: none; }
+.action-progress span { animation: processing-spin 900ms linear infinite; font-size: 18px; }
+@keyframes processing-spin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) { .feedback-live { inset: auto 12px calc(82px + env(safe-area-inset-bottom)); } .feedback-toast strong { font-size: 12px; } .topbar-right { gap: 7px !important; } .topbar-right .live-indicator { display: none; } }
+@media (prefers-reduced-motion: reduce) { .surface-enter, .backdrop-enter, .dialog-enter, .toast-enter, .action-progress span { animation: none !important; } .celebration { display: none; } button { transition: none !important; } button:not(:disabled):active { transform: none; } }

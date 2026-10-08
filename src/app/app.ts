@@ -1,4 +1,5 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, HostListener, computed, effect, signal, untracked } from '@angular/core';
+import { InteractionFeedback } from './interaction-feedback.service';
 import { FormsModule } from '@angular/forms';
 import { Area, AreaFilter, CompletionDispute, CompletionLog, HomeTask, HouseMember, Room } from './models';
 import { SupabaseService } from './supabase.service';
@@ -77,11 +78,21 @@ export class App {
   });
   readonly pendingDisputes = computed(() => this.data.disputes().filter((item) => item.status === 'pending'));
 
-  constructor(readonly data: SupabaseService) {}
+  constructor(readonly data: SupabaseService, readonly feedback: InteractionFeedback) {
+    effect(() => {
+      const error = this.actionError() || this.loginError();
+      if (error) untracked(() => this.feedback.show(error, 'error'));
+    });
+  }
 
-  setFilter(filter: AreaFilter) { this.areaFilter.set(filter); }
-  setRankingRoom(value: string) { this.rankingRoomFilter.set(value); }
-  setTab(tab: 'home' | 'history' | 'ranking' | 'manage') { this.activeTab.set(tab); this.actionError.set(''); }
+  @HostListener('document:pointerdown') unlockSound() { this.feedback.unlock(); }
+  @HostListener('document:keydown', ['$event']) unlockKeyboardSound(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') this.feedback.unlock();
+  }
+
+  setFilter(filter: AreaFilter) { this.areaFilter.set(filter); this.feedback.play('tap'); }
+  setRankingRoom(value: string) { this.rankingRoomFilter.set(value); this.feedback.play('tap'); }
+  setTab(tab: 'home' | 'history' | 'ranking' | 'manage') { if (this.activeTab() !== tab) this.feedback.play('tap'); this.activeTab.set(tab); this.actionError.set(''); }
   togglePin() { this.pinVisible.update((visible) => !visible); }
   setPin(value: string) { this.loginPin.set(value.replace(/\D/g, '').slice(0, 4)); }
   setMemberPin(value: string) { this.memberForm.update((form) => ({ ...form, pin: value.replace(/\D/g, '').slice(0, 4) })); }
@@ -106,12 +117,12 @@ export class App {
 
   async login() {
     this.busy.set(true); this.loginError.set('');
-    try { await this.data.login(this.loginUsername().trim(), this.loginPin()); this.loginPin.set(''); }
+    try { await this.data.login(this.loginUsername().trim(), this.loginPin()); this.loginPin.set(''); this.feedback.show('Bem-vindo à casa!'); }
     catch (error) { this.loginError.set(error instanceof Error ? error.message : 'Unable to sign in.'); }
     finally { this.busy.set(false); }
   }
 
-  async logout() { await this.data.logout(); this.setTab('home'); }
+  async logout() { await this.data.logout(); this.setTab('home'); this.feedback.show('Você saiu da conta.', 'remove'); }
 
   onPhotoPicked(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0] ?? null;
@@ -131,6 +142,7 @@ export class App {
       await this.data.completeTask(task, photo, this.completionNote().trim());
       this.closeComplete();
       this.activeTab.set('history');
+      this.feedback.show(`Tarefa concluída! +${task.points} pontos`, 'complete', task.points);
     } catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível salvar a tarefa concluída.'); }
     finally { this.busy.set(false); }
   }
@@ -144,7 +156,7 @@ export class App {
     const form = this.taskForm();
     if (!form.title.trim() || !form.roomId) { this.actionError.set('Informe o nome da atividade e escolha um cômodo.'); return; }
     this.busy.set(true); this.actionError.set('');
-    try { await this.data.createTask({ ...form, title: form.title.trim(), description: form.description.trim() }); this.showAddTask.set(false); this.taskForm.set({ title: '', roomId: this.data.rooms()[0]?.id ?? '', description: '', frequency: 'Weekly', points: 10 }); }
+    try { await this.data.createTask({ ...form, title: form.title.trim(), description: form.description.trim() }); this.feedback.show('Atividade adicionada!'); this.showAddTask.set(false); this.taskForm.set({ title: '', roomId: this.data.rooms()[0]?.id ?? '', description: '', frequency: 'Weekly', points: 10 }); }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível criar a tarefa.'); }
     finally { this.busy.set(false); }
   }
@@ -163,6 +175,7 @@ export class App {
         if (this.areaFilter() === previousRoomName) this.areaFilter.set('All areas');
         if (this.rankingRoomFilter() === previousRoomName) this.rankingRoomFilter.set('All rooms');
       }
+      this.feedback.show(roomId ? 'Cômodo atualizado!' : 'Cômodo adicionado!');
       this.showAddRoom.set(false); this.roomEditingId.set(null); this.roomForm.set({ name: '', emoji: '🏠' });
     }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível adicionar o cômodo.'); }
@@ -178,7 +191,7 @@ export class App {
       await this.data.deleteRoom(room.id, this.roomDeleteDestination() || null);
       if (this.areaFilter() === room.name) this.areaFilter.set('All areas');
       if (this.rankingRoomFilter() === room.name) this.rankingRoomFilter.set('All rooms');
-      this.roomDeleteTarget.set(null); this.roomDeleteDestination.set('');
+      this.roomDeleteTarget.set(null); this.roomDeleteDestination.set(''); this.feedback.show('Cômodo excluído.', 'remove');
     } catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível excluir este cômodo.'); }
     finally { this.busy.set(false); }
   }
@@ -187,7 +200,7 @@ export class App {
     const member = this.memberDeleteTarget();
     if (!member) return;
     this.busy.set(true); this.actionError.set('');
-    try { await this.data.deleteMember(member.id); this.memberDeleteTarget.set(null); }
+    try { await this.data.deleteMember(member.id); this.memberDeleteTarget.set(null); this.feedback.show('Acesso do morador removido.', 'remove'); }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível excluir este morador.'); }
     finally { this.busy.set(false); }
   }
@@ -196,14 +209,14 @@ export class App {
     const log = this.contestTarget();
     if (!log || this.contestReason().trim().length < 8) { this.actionError.set('Explique a contestação com pelo menos 8 caracteres.'); return; }
     this.busy.set(true); this.actionError.set('');
-    try { await this.data.contestCompletion(log.id, this.contestReason().trim()); this.contestTarget.set(null); this.contestReason.set(''); }
+    try { await this.data.contestCompletion(log.id, this.contestReason().trim()); this.contestTarget.set(null); this.contestReason.set(''); this.feedback.show('Contestação enviada para revisão.'); }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível enviar a contestação.'); }
     finally { this.busy.set(false); }
   }
 
   async resolveContest(dispute: CompletionDispute, status: 'accepted' | 'dismissed') {
     this.busy.set(true); this.actionError.set('');
-    try { await this.data.resolveDispute(dispute.id, status); }
+    try { await this.data.resolveDispute(dispute.id, status); this.feedback.show('Revisão registrada.'); }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível atualizar a contestação.'); }
     finally { this.busy.set(false); }
   }
@@ -216,6 +229,7 @@ export class App {
       const input = { ...form, username: form.username.trim().toLowerCase(), displayName: form.displayName.trim() };
       if (this.memberEditingId()) await this.data.updateMember(this.memberEditingId()!, input);
       else await this.data.addMember(input);
+      this.feedback.show(this.memberEditingId() ? 'Perfil atualizado!' : 'Morador adicionado!');
       this.showAddMember.set(false); this.memberEditingId.set(null); this.memberForm.set({ username: '', displayName: '', pin: '', role: 'member' });
     }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível criar o perfil.'); }
@@ -226,7 +240,7 @@ export class App {
     const target = this.resetTarget();
     if (!target || !/^\d{4}$/.test(this.resetPinValue())) { this.actionError.set('Informe um PIN de quatro dígitos.'); return; }
     this.busy.set(true); this.actionError.set('');
-    try { await this.data.resetPin(target.id, this.resetPinValue()); this.resetTarget.set(null); this.resetPinValue.set(''); }
+    try { await this.data.resetPin(target.id, this.resetPinValue()); this.resetTarget.set(null); this.resetPinValue.set(''); this.feedback.show('PIN atualizado.'); }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível redefinir o PIN.'); }
     finally { this.busy.set(false); }
   }
