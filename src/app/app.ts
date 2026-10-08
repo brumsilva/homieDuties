@@ -12,6 +12,8 @@ import { SupabaseService } from './supabase.service';
 export class App {
   readonly activeTab = signal<'home' | 'history' | 'ranking' | 'manage'>('home');
   readonly areaFilter = signal<AreaFilter>('All areas');
+  readonly rankingRoomFilter = signal('All rooms');
+  readonly rankingActivityFilter = signal('All activities');
   readonly showComplete = signal<HomeTask | null>(null);
   readonly showAddTask = signal(false);
   readonly showAddMember = signal(false);
@@ -39,27 +41,53 @@ export class App {
   readonly eligibleLogs = computed(() => this.data.logs().filter((log) => this.data.disputes().find((item) => item.completionLogId === log.id)?.status !== 'accepted'));
   readonly totalPoints = computed(() => this.eligibleLogs().reduce((sum, log) => sum + log.pointsEarned, 0));
   readonly areaOptions = computed<AreaFilter[]>(() => ['All areas', ...this.data.rooms().map((room) => room.name)]);
-  readonly activityRankings = computed(() => {
-    const groups = new Map<string, CompletionLog[]>();
-    for (const log of this.eligibleLogs()) groups.set(log.activityGroupId, [...(groups.get(log.activityGroupId) ?? []), log]);
-    const tasksByGroup = new Map<string, HomeTask[]>();
-    for (const task of this.data.tasks()) tasksByGroup.set(task.activityGroupId, [...(tasksByGroup.get(task.activityGroupId) ?? []), task]);
-    const groupIds = new Set([...groups.keys(), ...tasksByGroup.keys()]);
-    return [...groupIds].map((id) => {
-      const logs = groups.get(id) ?? [];
-      const task = tasksByGroup.get(id)?.[0];
-      const totals = this.data.members().map((member) => {
-        const ownLogs = logs.filter((log) => log.memberId === member.id);
-        return { memberId: member.id, name: member.displayName, count: ownLogs.length, points: ownLogs.reduce((sum, log) => sum + log.pointsEarned, 0) };
-      }).sort((a, b) => b.points - a.points || b.count - a.count || a.name.localeCompare(b.name));
-      return { id, title: logs[0]?.taskTitle ?? task?.title ?? 'Atividade', roomName: logs[0]?.roomName ?? task?.area ?? '', roomEmoji: logs[0]?.roomEmoji ?? this.roomEmoji(task?.area ?? ''), points: logs[0]?.pointsEarned ?? task?.points ?? 10, completions: logs.length, totals };
-    }).sort((a, b) => b.completions - a.completions || a.title.localeCompare(b.title));
+  readonly rankingActivities = computed(() => {
+    const options = new Map<string, { id: string; title: string; roomName: string }>();
+    for (const task of this.data.tasks()) options.set(task.activityGroupId, { id: task.activityGroupId, title: task.title, roomName: task.area });
+    for (const log of this.eligibleLogs()) options.set(log.activityGroupId, { id: log.activityGroupId, title: log.taskTitle, roomName: log.roomName });
+    return [...options.values()].sort((a, b) => a.title.localeCompare(b.title));
+  });
+  readonly filteredRankingLogs = computed(() => this.eligibleLogs().filter((log) =>
+    (this.rankingRoomFilter() === 'All rooms' || log.roomName === this.rankingRoomFilter()) &&
+    (this.rankingActivityFilter() === 'All activities' || log.activityGroupId === this.rankingActivityFilter()),
+  ));
+  readonly overallRanking = computed(() => this.data.members().map((member) => {
+    const logs = this.filteredRankingLogs().filter((log) => log.memberId === member.id);
+    const points = logs.reduce((sum, log) => sum + log.pointsEarned, 0);
+    const byActivity = new Map<string, { title: string; points: number; count: number }>();
+    const byRoom = new Map<string, { points: number; count: number }>();
+    for (const log of logs) {
+      const activity = byActivity.get(log.activityGroupId) ?? { title: log.taskTitle, points: 0, count: 0 };
+      activity.points += log.pointsEarned; activity.count += 1; byActivity.set(log.activityGroupId, activity);
+      const room = byRoom.get(log.roomName) ?? { points: 0, count: 0 };
+      room.points += log.pointsEarned; room.count += 1; byRoom.set(log.roomName, room);
+    }
+    const topActivity = [...byActivity.values()].sort((a, b) => b.points - a.points || b.count - a.count)[0];
+    const topRoom = [...byRoom.entries()].sort((a, b) => b[1].points - a[1].points)[0];
+    return { memberId: member.id, name: member.displayName, count: logs.length, points, topActivity: topActivity?.title ?? '', topRoom: topRoom?.[0] ?? '' };
+  }).sort((a, b) => b.points - a.points || b.count - a.count || a.name.localeCompare(b.name)));
+  readonly rankingInsights = computed(() => {
+    const logs = this.filteredRankingLogs();
+    const roomTotals = new Map<string, { points: number; count: number }>();
+    const activityTotals = new Map<string, { title: string; roomName: string; points: number; count: number }>();
+    for (const log of logs) {
+      const room = roomTotals.get(log.roomName) ?? { points: 0, count: 0 };
+      room.points += log.pointsEarned; room.count += 1; roomTotals.set(log.roomName, room);
+      const activity = activityTotals.get(log.activityGroupId) ?? { title: log.taskTitle, roomName: log.roomName, points: 0, count: 0 };
+      activity.points += log.pointsEarned; activity.count += 1; activityTotals.set(log.activityGroupId, activity);
+    }
+    const topRoom = [...roomTotals.entries()].sort((a, b) => b[1].points - a[1].points)[0];
+    const topActivity = [...activityTotals.values()].sort((a, b) => b.points - a.points || b.count - a.count)[0];
+    return { totalPoints: logs.reduce((sum, log) => sum + log.pointsEarned, 0), totalCompletions: logs.length, topRoom: topRoom ? { name: topRoom[0], ...topRoom[1] } : null, topActivity: topActivity ?? null };
   });
   readonly pendingDisputes = computed(() => this.data.disputes().filter((item) => item.status === 'pending'));
 
   constructor(readonly data: SupabaseService) {}
 
   setFilter(filter: AreaFilter) { this.areaFilter.set(filter); }
+  setRankingRoom(value: string) { this.rankingRoomFilter.set(value); this.rankingActivityFilter.set('All activities'); }
+  setRankingActivity(value: string) { this.rankingActivityFilter.set(value); }
+  rankingActivitiesForSelectedRoom() { return this.rankingActivities().filter((activity) => this.rankingRoomFilter() === 'All rooms' || activity.roomName === this.rankingRoomFilter()); }
   setTab(tab: 'home' | 'history' | 'ranking' | 'manage') { this.activeTab.set(tab); this.actionError.set(''); }
   togglePin() { this.pinVisible.update((visible) => !visible); }
   setPin(value: string) { this.loginPin.set(value.replace(/\D/g, '').slice(0, 4)); }
