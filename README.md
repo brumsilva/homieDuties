@@ -18,7 +18,7 @@ Sem configuração do Supabase, o app abre com cinco perfis de exemplo. Entre co
 1. Para usar a stack local, instale e inicie o Docker Desktop. Depois execute `npx supabase start`; use `npx supabase status` para encontrar a URL local da API e a chave publicável/anônima.
 2. Aplique a migração com `npx supabase db reset` em um banco local novo. Para um projeto hospedado, vincule-o e use `npx supabase db push`.
 3. Edite `public/homie-config.js` com a URL do projeto e a chave publicável/anônima. Nunca coloque uma chave secreta ou `service_role` nesse arquivo.
-4. Crie `supabase/.env.local` com dois segredos fortes e diferentes:
+4. Crie `supabase/.env.local` com dois segredos fortes e diferentes, cada um com ao menos 32 caracteres aleatórios:
 
    ```dotenv
    HOMIE_PIN_PEPPER=um-segredo-aleatorio-com-pelo-menos-32-caracteres
@@ -31,7 +31,7 @@ Sem configuração do Supabase, o app abre com cinco perfis de exemplo. Entre co
    npx supabase functions serve --env-file supabase/.env.local
    ```
 
-5. Defina `SUPABASE_URL` e `SUPABASE_ANON_KEY` no terminal e execute `npm run bootstrap:household`. O script pede o nome da casa e cinco nomes, usuários e PINs; a primeira pessoa será administradora. A função de inicialização só pode ser usada uma vez e exige o segredo de configuração.
+5. Defina `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` e `HOMIE_BOOTSTRAP_SECRET` no terminal e execute `npm run bootstrap:household`. O script pede o nome da casa e permite criar de um a cinco perfis; o primeiro será administrador. Se criar só o admin agora, ele poderá adicionar os demais moradores depois pelo app. A função de inicialização só pode ser usada uma vez e exige o segredo de configuração.
 6. Inicie o app com `npm start` e entre usando um dos cinco perfis.
 
 A função de configuração cria usuários no Supabase Auth. Ela deriva uma senha longa a partir do usuário e do PIN usando o segredo disponível apenas no servidor; o PIN original não é armazenado. Tentativas de login são limitadas no banco por usuário e IP. Depois de criar a casa, remova `HOMIE_BOOTSTRAP_SECRET` dos segredos das Edge Functions. Mantenha `HOMIE_PIN_PEPPER` configurado para permitir login e redefinição de PIN.
@@ -59,7 +59,7 @@ A função de configuração cria usuários no Supabase Auth. Ela deriva uma sen
    ```
 
 4. Configure `public/homie-config.js` com a URL hospedada e a chave publicável/anônima. Gere o app com `npm run build`; o resultado fica em `dist/homie-duties/`.
-5. Execute `npm run bootstrap:household` uma vez usando URL, chave e segredo da configuração. Depois, remova `HOMIE_BOOTSTRAP_SECRET` do projeto. Desative o cadastro público de usuários nas configurações do Supabase Auth; os perfis devem ser criados pelo administrador da casa.
+5. Execute `npm run bootstrap:household` uma vez usando URL, chave publicável e segredo de configuração. Crie um ou mais perfis; o primeiro será admin. Depois, remova `HOMIE_BOOTSTRAP_SECRET` do projeto. Desative o cadastro público de usuários nas configurações do Supabase Auth; os perfis devem ser criados pelo administrador da casa.
 
 ## Dados e segurança
 

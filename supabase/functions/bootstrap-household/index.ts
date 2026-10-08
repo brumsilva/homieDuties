@@ -21,8 +21,8 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const members = body.members as InitialMember[];
-    if (!name || name.length > 80 || !Array.isArray(members) || members.length !== 5) {
-      return json({ error: 'Provide a household name and exactly five initial members.' }, 400);
+    if (!name || name.length > 80 || !Array.isArray(members) || members.length < 1 || members.length > 5) {
+      return json({ error: 'Provide a household name and between one and five initial members.' }, 400);
     }
     const normalized = members.map((member) => ({
       username: typeof member.username === 'string' ? member.username.trim().toLowerCase() : '',

@@ -37,8 +37,12 @@ const askPin = (label) => {
 
 try {
   const name = await ask('Nome da casa: ');
+  let memberCount = Number(await ask('Quantos perfis criar agora? (1 a 5): '));
+  while (!Number.isInteger(memberCount) || memberCount < 1 || memberCount > 5) {
+    memberCount = Number(await ask('Informe um número de 1 a 5: '));
+  }
   const members = [];
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < memberCount; index += 1) {
     output.write(`\n${index === 0 ? 'Administradora / responsável pela casa' : `Morador(a) ${index + 1}`}\n`);
     const displayName = await ask('  Nome: ');
     const username = await ask('  Usuário (2 a 32 letras, números, pontos, traços ou sublinhados): ');
