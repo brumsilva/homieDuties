@@ -12,14 +12,16 @@ export function json(data: unknown, status = 200) {
 
 export function createAdminClient() {
   const url = Deno.env.get('SUPABASE_URL')!;
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SECRET_KEY');
+  const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS');
+  const key = secretKeys ? JSON.parse(secretKeys).default : Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!key) throw new Error('Missing Supabase secret key');
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 export function createPublicClient() {
   const url = Deno.env.get('SUPABASE_URL')!;
-  const key = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY');
+  const publishableKeys = Deno.env.get('SUPABASE_PUBLISHABLE_KEYS');
+  const key = publishableKeys ? JSON.parse(publishableKeys).default : Deno.env.get('SUPABASE_ANON_KEY');
   if (!key) throw new Error('Missing Supabase publishable key');
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
