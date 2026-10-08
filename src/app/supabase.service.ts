@@ -92,7 +92,7 @@ export class SupabaseService {
     this.lastError.set('');
     const [tasksResult, membersResult, logsResult, roomsResult, disputesResult] = await Promise.all([
       this.client.from('tasks').select('*').order('created_at'),
-      this.client.from('profiles').select('id, username, display_name, role').order('display_name'),
+      this.client.from('profiles').select('id, username, display_name, role').eq('is_active', true).order('display_name'),
       this.client.from('completion_logs').select('id, task_id, member_id, completed_at, note, photo_path, activity_group_id, activity_title, room_name, room_emoji, points_earned, tasks(title, area), profiles(display_name)').order('completed_at', { ascending: false }).limit(1000),
       this.client.from('rooms').select('id, name, emoji').order('name'),
       this.client.from('completion_disputes').select('id, completion_log_id, reporter_id, reason, status, resolution_note, created_at, reporter:profiles!completion_disputes_reporter_id_fkey(display_name)').order('created_at', { ascending: false }).limit(500),
@@ -102,6 +102,8 @@ export class SupabaseService {
     this.rooms.set((roomsResult.data ?? []).map((row: any) => ({ id: row.id, name: row.name, emoji: row.emoji })));
     this.tasks.set((tasksResult.data ?? []).map((row: any) => ({ id: row.id, title: row.title, area: row.area, roomId: row.room_id, description: row.description, frequency: row.frequency, status: row.status, createdAt: row.created_at, availableAt: row.available_at, activityGroupId: row.activity_group_id, points: row.points })));
     this.members.set((membersResult.data ?? []).map((row: any) => ({ id: row.id, username: row.username, displayName: row.display_name, role: row.role })));
+    const current = this.members().find((member) => member.id === this.currentMember()?.id);
+    if (current) this.currentMember.set(current);
     this.logs.set((logsResult.data ?? []).map((row: any) => ({
       id: row.id, taskId: row.task_id, taskTitle: row.activity_title ?? row.tasks?.title ?? 'Task', area: row.room_name ?? row.tasks?.area ?? 'Kitchen', roomName: row.room_name ?? row.tasks?.area ?? 'Kitchen', roomEmoji: row.room_emoji ?? '🏠', activityGroupId: row.activity_group_id, pointsEarned: row.points_earned ?? 10,
       memberId: row.member_id, memberName: row.profiles?.display_name ?? 'Housemate', completedAt: row.completed_at,
@@ -175,6 +177,35 @@ export class SupabaseService {
     await this.refresh();
   }
 
+  async updateRoom(roomId: string, input: { name: string; emoji: string }) {
+    const existing = this.rooms().find((room) => room.id === roomId);
+    if (!existing) throw new Error('Cômodo não encontrado.');
+    if (!this.client) {
+      if (this.rooms().some((room) => room.id !== roomId && room.name.toLowerCase() === input.name.toLowerCase())) throw new Error('Já existe um cômodo com esse nome.');
+      this.rooms.update((rooms) => rooms.map((room) => room.id === roomId ? { ...room, ...input } : room));
+      this.tasks.update((tasks) => tasks.map((task) => task.roomId === roomId ? { ...task, area: input.name } : task));
+      return;
+    }
+    const { error } = await this.client.rpc('update_household_room', { p_room_id: roomId, p_name: input.name, p_emoji: input.emoji });
+    if (error) throw new Error(error.message.includes('rooms_household_name_ci_idx') ? 'Já existe um cômodo com esse nome.' : 'Não foi possível editar este cômodo.');
+    await this.refresh();
+  }
+
+  async deleteRoom(roomId: string, replacementRoomId: string | null) {
+    const room = this.rooms().find((item) => item.id === roomId);
+    if (!room) throw new Error('Cômodo não encontrado.');
+    if (!this.client) {
+      if (this.tasks().some((task) => task.roomId === roomId) && !replacementRoomId) throw new Error('Escolha outro cômodo para as atividades vinculadas.');
+      const replacement = this.rooms().find((item) => item.id === replacementRoomId);
+      this.tasks.update((tasks) => tasks.map((task) => task.roomId === roomId && replacement ? { ...task, roomId: replacement.id, area: replacement.name } : task));
+      this.rooms.update((rooms) => rooms.filter((item) => item.id !== roomId));
+      return;
+    }
+    const { error } = await this.client.rpc('delete_household_room', { p_room_id: roomId, p_replacement_room_id: replacementRoomId });
+    if (error) throw new Error(error.message.includes('Choose another room') ? 'Escolha outro cômodo para receber as atividades vinculadas.' : 'Não foi possível excluir este cômodo.');
+    await this.refresh();
+  }
+
   async contestCompletion(logId: string, reason: string) {
     const member = this.currentMember();
     if (!member) throw new Error('Entre novamente para continuar.');
@@ -212,6 +243,31 @@ export class SupabaseService {
     await this.refresh();
   }
 
+  async updateMember(memberId: string, input: { username: string; displayName: string; pin: string; role: 'admin' | 'member' }) {
+    const target = this.members().find((item) => item.id === memberId);
+    if (!target) throw new Error('Morador não encontrado.');
+    if (!this.client) {
+      if (input.username !== target.username && this.members().some((item) => item.id !== memberId && item.username.toLowerCase() === input.username.toLowerCase())) throw new Error('Esse usuário já está em uso.');
+      this.members.update((items) => items.map((item) => item.id === memberId ? { ...item, username: input.username, displayName: input.displayName, role: input.role } : item));
+      if (this.currentMember()?.id === memberId) this.currentMember.update((member) => member ? { ...member, username: input.username, displayName: input.displayName, role: input.role } : null);
+      return;
+    }
+    const { error } = await this.client.functions.invoke('manage-member', { body: { action: 'update', memberId, ...input } });
+    if (error) throw new Error(error.message || 'Não foi possível editar o perfil.');
+    await this.refresh();
+  }
+
+  async deleteMember(memberId: string) {
+    if (memberId === this.currentMember()?.id) throw new Error('Você não pode excluir o próprio perfil.');
+    if (!this.client) {
+      this.members.update((items) => items.filter((member) => member.id !== memberId));
+      return;
+    }
+    const { error } = await this.client.functions.invoke('manage-member', { body: { action: 'delete', memberId } });
+    if (error) throw new Error(error.message || 'Não foi possível excluir o perfil.');
+    await this.refresh();
+  }
+
   async resetPin(memberId: string, pin: string) {
     if (!this.client) return;
     const { error } = await this.client.functions.invoke('manage-member', { body: { action: 'reset-pin', memberId, pin } });
@@ -219,7 +275,7 @@ export class SupabaseService {
   }
 
   private async loadMember(id: string) {
-    const { data, error } = await this.client!.from('profiles').select('id, username, display_name, role').eq('id', id).single();
+    const { data, error } = await this.client!.from('profiles').select('id, username, display_name, role').eq('id', id).eq('is_active', true).single();
     if (error || !data) { await this.client!.auth.signOut(); throw new Error('Perfil não encontrado. Peça ao administrador para rever o acesso.'); }
     this.currentMember.set({ id: data.id, username: data.username, displayName: data.display_name, role: data.role });
   }

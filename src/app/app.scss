@@ -80,3 +80,4 @@
 @media (max-width: 360px) { .stats-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.members-grid { grid-template-columns: 1fr; }.welcome-row h1 { font-size: 22px; } }
 .complete-button:disabled { color: #a3aba4; cursor: default; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+@media (max-width: 640px) { .member-card .record-actions { gap: 4px; }.member-card .record-actions button { flex: 1 1 calc(50% - 4px); min-width: 0; padding: 0 5px; font-size: 9px; }.member-card .record-actions button.pin-action { flex-basis: 100%; } }

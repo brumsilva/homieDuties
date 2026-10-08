@@ -1,6 +1,6 @@
 import { Component, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Area, AreaFilter, CompletionDispute, CompletionLog, HomeTask } from './models';
+import { Area, AreaFilter, CompletionDispute, CompletionLog, HomeTask, HouseMember, Room } from './models';
 import { SupabaseService } from './supabase.service';
 
 @Component({
@@ -13,11 +13,15 @@ export class App {
   readonly activeTab = signal<'home' | 'history' | 'ranking' | 'manage'>('home');
   readonly areaFilter = signal<AreaFilter>('All areas');
   readonly rankingRoomFilter = signal('All rooms');
-  readonly rankingActivityFilter = signal('All activities');
   readonly showComplete = signal<HomeTask | null>(null);
   readonly showAddTask = signal(false);
   readonly showAddMember = signal(false);
   readonly showAddRoom = signal(false);
+  readonly roomEditingId = signal<string | null>(null);
+  readonly roomDeleteTarget = signal<Room | null>(null);
+  readonly roomDeleteDestination = signal('');
+  readonly memberEditingId = signal<string | null>(null);
+  readonly memberDeleteTarget = signal<HouseMember | null>(null);
   readonly contestTarget = signal<CompletionLog | null>(null);
   readonly roomForm = signal({ name: '', emoji: '🏠' });
   readonly contestReason = signal('');
@@ -41,16 +45,7 @@ export class App {
   readonly eligibleLogs = computed(() => this.data.logs().filter((log) => this.data.disputes().find((item) => item.completionLogId === log.id)?.status !== 'accepted'));
   readonly totalPoints = computed(() => this.eligibleLogs().reduce((sum, log) => sum + log.pointsEarned, 0));
   readonly areaOptions = computed<AreaFilter[]>(() => ['All areas', ...this.data.rooms().map((room) => room.name)]);
-  readonly rankingActivities = computed(() => {
-    const options = new Map<string, { id: string; title: string; roomName: string }>();
-    for (const task of this.data.tasks()) options.set(task.activityGroupId, { id: task.activityGroupId, title: task.title, roomName: task.area });
-    for (const log of this.eligibleLogs()) options.set(log.activityGroupId, { id: log.activityGroupId, title: log.taskTitle, roomName: log.roomName });
-    return [...options.values()].sort((a, b) => a.title.localeCompare(b.title));
-  });
-  readonly filteredRankingLogs = computed(() => this.eligibleLogs().filter((log) =>
-    (this.rankingRoomFilter() === 'All rooms' || log.roomName === this.rankingRoomFilter()) &&
-    (this.rankingActivityFilter() === 'All activities' || log.activityGroupId === this.rankingActivityFilter()),
-  ));
+  readonly filteredRankingLogs = computed(() => this.eligibleLogs().filter((log) => this.rankingRoomFilter() === 'All rooms' || log.roomName === this.rankingRoomFilter()));
   readonly overallRanking = computed(() => this.data.members().map((member) => {
     const logs = this.filteredRankingLogs().filter((log) => log.memberId === member.id);
     const points = logs.reduce((sum, log) => sum + log.pointsEarned, 0);
@@ -85,9 +80,7 @@ export class App {
   constructor(readonly data: SupabaseService) {}
 
   setFilter(filter: AreaFilter) { this.areaFilter.set(filter); }
-  setRankingRoom(value: string) { this.rankingRoomFilter.set(value); this.rankingActivityFilter.set('All activities'); }
-  setRankingActivity(value: string) { this.rankingActivityFilter.set(value); }
-  rankingActivitiesForSelectedRoom() { return this.rankingActivities().filter((activity) => this.rankingRoomFilter() === 'All rooms' || activity.roomName === this.rankingRoomFilter()); }
+  setRankingRoom(value: string) { this.rankingRoomFilter.set(value); }
   setTab(tab: 'home' | 'history' | 'ranking' | 'manage') { this.activeTab.set(tab); this.actionError.set(''); }
   togglePin() { this.pinVisible.update((visible) => !visible); }
   setPin(value: string) { this.loginPin.set(value.replace(/\D/g, '').slice(0, 4)); }
@@ -104,6 +97,12 @@ export class App {
   setMemberName(value: string) { this.memberForm.update((form) => ({ ...form, displayName: value })); }
   setMemberUsername(value: string) { this.memberForm.update((form) => ({ ...form, username: value })); }
   setMemberRole(value: 'member' | 'admin') { this.memberForm.update((form) => ({ ...form, role: value })); }
+  openAddRoom() { this.roomEditingId.set(null); this.roomForm.set({ name: '', emoji: '🏠' }); this.actionError.set(''); this.showAddRoom.set(true); }
+  openEditRoom(room: Room) { this.roomEditingId.set(room.id); this.roomForm.set({ name: room.name, emoji: room.emoji }); this.actionError.set(''); this.showAddRoom.set(true); }
+  requestDeleteRoom(room: Room) { this.roomDeleteTarget.set(room); this.roomDeleteDestination.set(this.data.rooms().find((item) => item.id !== room.id)?.id ?? ''); this.actionError.set(''); }
+  openAddMember() { this.memberEditingId.set(null); this.memberForm.set({ username: '', displayName: '', pin: '', role: 'member' }); this.actionError.set(''); this.showAddMember.set(true); }
+  openEditMember(member: HouseMember) { this.memberEditingId.set(member.id); this.memberForm.set({ username: member.username, displayName: member.displayName, pin: '', role: member.role }); this.actionError.set(''); this.showAddMember.set(true); }
+  memberUsernameChanged() { const original = this.data.members().find((member) => member.id === this.memberEditingId()); return Boolean(original && original.username !== this.memberForm().username.trim().toLowerCase()); }
 
   async login() {
     this.busy.set(true); this.loginError.set('');
@@ -153,9 +152,43 @@ export class App {
   async saveRoom() {
     const form = this.roomForm();
     if (!form.name.trim()) { this.actionError.set('Dê um nome para o cômodo.'); return; }
+    const roomId = this.roomEditingId();
+    const previousRoomName = roomId ? this.data.rooms().find((room) => room.id === roomId)?.name : undefined;
     this.busy.set(true); this.actionError.set('');
-    try { await this.data.createRoom({ name: form.name.trim(), emoji: form.emoji || '🏠' }); this.showAddRoom.set(false); this.roomForm.set({ name: '', emoji: '🏠' }); }
+    try {
+      const input = { name: form.name.trim(), emoji: form.emoji || '🏠' };
+      if (roomId) await this.data.updateRoom(roomId, input);
+      else await this.data.createRoom(input);
+      if (previousRoomName && previousRoomName !== input.name) {
+        if (this.areaFilter() === previousRoomName) this.areaFilter.set('All areas');
+        if (this.rankingRoomFilter() === previousRoomName) this.rankingRoomFilter.set('All rooms');
+      }
+      this.showAddRoom.set(false); this.roomEditingId.set(null); this.roomForm.set({ name: '', emoji: '🏠' });
+    }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível adicionar o cômodo.'); }
+    finally { this.busy.set(false); }
+  }
+
+  async confirmDeleteRoom() {
+    const room = this.roomDeleteTarget();
+    if (!room) return;
+    if (this.roomTaskCount(room.id) > 0 && !this.roomDeleteDestination()) { this.actionError.set('Escolha para qual cômodo as atividades serão movidas.'); return; }
+    this.busy.set(true); this.actionError.set('');
+    try {
+      await this.data.deleteRoom(room.id, this.roomDeleteDestination() || null);
+      if (this.areaFilter() === room.name) this.areaFilter.set('All areas');
+      if (this.rankingRoomFilter() === room.name) this.rankingRoomFilter.set('All rooms');
+      this.roomDeleteTarget.set(null); this.roomDeleteDestination.set('');
+    } catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível excluir este cômodo.'); }
+    finally { this.busy.set(false); }
+  }
+
+  async confirmDeleteMember() {
+    const member = this.memberDeleteTarget();
+    if (!member) return;
+    this.busy.set(true); this.actionError.set('');
+    try { await this.data.deleteMember(member.id); this.memberDeleteTarget.set(null); }
+    catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível excluir este morador.'); }
     finally { this.busy.set(false); }
   }
 
@@ -177,9 +210,14 @@ export class App {
 
   async saveMember() {
     const form = this.memberForm();
-    if (!form.username.trim() || !form.displayName.trim() || !/^\d{4}$/.test(form.pin)) { this.actionError.set('Informe o nome, o usuário e um PIN de quatro dígitos.'); return; }
+    if (!form.username.trim() || !form.displayName.trim() || (!this.memberEditingId() && !/^\d{4}$/.test(form.pin)) || (this.memberEditingId() && this.memberUsernameChanged() && !/^\d{4}$/.test(form.pin))) { this.actionError.set('Informe nome e usuário. Para trocar o usuário, informe também um PIN de quatro dígitos.'); return; }
     this.busy.set(true); this.actionError.set('');
-    try { await this.data.addMember({ ...form, username: form.username.trim().toLowerCase(), displayName: form.displayName.trim() }); this.showAddMember.set(false); this.memberForm.set({ username: '', displayName: '', pin: '', role: 'member' }); }
+    try {
+      const input = { ...form, username: form.username.trim().toLowerCase(), displayName: form.displayName.trim() };
+      if (this.memberEditingId()) await this.data.updateMember(this.memberEditingId()!, input);
+      else await this.data.addMember(input);
+      this.showAddMember.set(false); this.memberEditingId.set(null); this.memberForm.set({ username: '', displayName: '', pin: '', role: 'member' });
+    }
     catch (error) { this.actionError.set(error instanceof Error ? error.message : 'Não foi possível criar o perfil.'); }
     finally { this.busy.set(false); }
   }

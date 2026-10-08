@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
     if (limitError) throw limitError;
     if (!allowed) return json({ error: 'Too many attempts. Please wait 15 minutes and try again.' }, 429);
 
-    const { data: profile, error: profileError } = await admin.from('profiles').select('id, username').eq('username', username).maybeSingle();
+    const { data: profile, error: profileError } = await admin.from('profiles').select('id, username').eq('username', username).eq('is_active', true).maybeSingle();
     if (profileError || !profile) return json({ error: 'Username or PIN is incorrect.' }, 401);
 
     const auth = createPublicClient();
