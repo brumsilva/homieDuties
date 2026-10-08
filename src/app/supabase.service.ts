@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Area, CompletionLog, HomeTask, HouseMember } from './models';
+import { Area, CompletionDispute, CompletionLog, HomeTask, HouseMember, Room } from './models';
 
 declare global {
   interface Window {
@@ -16,6 +16,13 @@ const demoMembers: HouseMember[] = [
   { id: 'demo-dara', username: 'dara', displayName: 'Dara', role: 'member' },
   { id: 'demo-erin', username: 'erin', displayName: 'Erin', role: 'member' },
 ];
+const demoRooms: Room[] = [
+  { id: 'demo-room-kitchen', name: 'Kitchen', emoji: '🍳' },
+  { id: 'demo-room-bathroom', name: 'Bathroom', emoji: '🛁' },
+  { id: 'demo-room-hallway', name: 'Hallway', emoji: '🧹' },
+];
+
+const demoActivityGroup = (id: string) => `activity-${id}`;
 
 @Injectable({ providedIn: 'root' })
 export class SupabaseService {
@@ -23,11 +30,14 @@ export class SupabaseService {
   readonly client?: SupabaseClient;
   readonly currentMember = signal<HouseMember | null>(null);
   readonly members = signal<HouseMember[]>(demoMembers);
+  readonly rooms = signal<Room[]>(demoRooms);
+  readonly disputes = signal<CompletionDispute[]>([]);
   readonly tasks = signal<HomeTask[]>([
-    { id: 'demo-1', title: 'Organizar a cozinha', area: 'Kitchen', description: 'Limpar bancadas e mesa, limpar o fogão e deixar a pia vazia.', frequency: 'Daily', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString() },
-    { id: 'demo-2', title: 'Levar o lixo para fora', area: 'Kitchen', description: 'Separar reciclagem e lixo comum e colocar sacos novos nas lixeiras.', frequency: 'As needed', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString() },
-    { id: 'demo-3', title: 'Limpar o banheiro', area: 'Bathroom', description: 'Limpar vaso, pia, espelho e chuveiro; trocar a toalha de mãos.', frequency: 'Weekly', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString() },
-    { id: 'demo-4', title: 'Aspirar o corredor', area: 'Hallway', description: 'Aspirar o carpete do corredor da porta de entrada até o andar de cima, inclusive as bordas.', frequency: 'Weekly', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString() },
+    { id: 'demo-1', title: 'Organizar a cozinha', area: 'Kitchen', roomId: demoRooms[0].id, description: 'Limpar bancadas e mesa, limpar o fogão e deixar a pia vazia.', frequency: 'Daily', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString(), activityGroupId: demoActivityGroup('1'), points: 10 },
+    { id: 'demo-2', title: 'Guardar os talheres', area: 'Kitchen', roomId: demoRooms[0].id, description: 'Guardar os talheres limpos no lugar.', frequency: 'Ongoing', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString(), activityGroupId: demoActivityGroup('2'), points: 3 },
+    { id: 'demo-3', title: 'Levar o lixo para fora', area: 'Kitchen', roomId: demoRooms[0].id, description: 'Separar reciclagem e lixo comum e colocar sacos novos nas lixeiras.', frequency: 'Ongoing', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString(), activityGroupId: demoActivityGroup('3'), points: 5 },
+    { id: 'demo-4', title: 'Limpar o banheiro', area: 'Bathroom', roomId: demoRooms[1].id, description: 'Limpar vaso, pia, espelho e chuveiro; trocar a toalha de mãos.', frequency: 'Weekly', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString(), activityGroupId: demoActivityGroup('4'), points: 15 },
+    { id: 'demo-5', title: 'Aspirar o corredor', area: 'Hallway', roomId: demoRooms[2].id, description: 'Aspirar o carpete do corredor da porta de entrada até o andar de cima, inclusive as bordas.', frequency: 'Weekly', status: 'open', createdAt: new Date().toISOString(), availableAt: new Date().toISOString(), activityGroupId: demoActivityGroup('5'), points: 15 },
   ]);
   readonly logs = signal<CompletionLog[]>([]);
   readonly lastError = signal('');
@@ -80,33 +90,40 @@ export class SupabaseService {
   async refresh(): Promise<boolean> {
     if (!this.client || !this.currentMember()) return false;
     this.lastError.set('');
-    const [tasksResult, membersResult, logsResult] = await Promise.all([
+    const [tasksResult, membersResult, logsResult, roomsResult, disputesResult] = await Promise.all([
       this.client.from('tasks').select('*').order('created_at'),
       this.client.from('profiles').select('id, username, display_name, role').order('display_name'),
-      this.client.from('completion_logs').select('id, task_id, member_id, completed_at, note, photo_path, tasks(title, area), profiles(display_name)').order('completed_at', { ascending: false }).limit(100),
+      this.client.from('completion_logs').select('id, task_id, member_id, completed_at, note, photo_path, activity_group_id, activity_title, room_name, room_emoji, points_earned, tasks(title, area), profiles(display_name)').order('completed_at', { ascending: false }).limit(1000),
+      this.client.from('rooms').select('id, name, emoji').order('name'),
+      this.client.from('completion_disputes').select('id, completion_log_id, reporter_id, reason, status, resolution_note, created_at, reporter:profiles!completion_disputes_reporter_id_fkey(display_name)').order('created_at', { ascending: false }).limit(500),
     ]);
-    const error = tasksResult.error || membersResult.error || logsResult.error;
+    const error = tasksResult.error || membersResult.error || logsResult.error || roomsResult.error || disputesResult.error;
     if (error) { this.lastError.set('Não foi possível carregar os dados. Confira a configuração e as políticas do Supabase.'); return false; }
-    this.tasks.set((tasksResult.data ?? []).map((row: any) => ({ id: row.id, title: row.title, area: row.area, description: row.description, frequency: row.frequency, status: row.status, createdAt: row.created_at, availableAt: row.available_at })));
+    this.rooms.set((roomsResult.data ?? []).map((row: any) => ({ id: row.id, name: row.name, emoji: row.emoji })));
+    this.tasks.set((tasksResult.data ?? []).map((row: any) => ({ id: row.id, title: row.title, area: row.area, roomId: row.room_id, description: row.description, frequency: row.frequency, status: row.status, createdAt: row.created_at, availableAt: row.available_at, activityGroupId: row.activity_group_id, points: row.points })));
     this.members.set((membersResult.data ?? []).map((row: any) => ({ id: row.id, username: row.username, displayName: row.display_name, role: row.role })));
     this.logs.set((logsResult.data ?? []).map((row: any) => ({
-      id: row.id, taskId: row.task_id, taskTitle: row.tasks?.title ?? 'Task', area: row.tasks?.area ?? 'Kitchen',
+      id: row.id, taskId: row.task_id, taskTitle: row.activity_title ?? row.tasks?.title ?? 'Task', area: row.room_name ?? row.tasks?.area ?? 'Kitchen', roomName: row.room_name ?? row.tasks?.area ?? 'Kitchen', roomEmoji: row.room_emoji ?? '🏠', activityGroupId: row.activity_group_id, pointsEarned: row.points_earned ?? 10,
       memberId: row.member_id, memberName: row.profiles?.display_name ?? 'Housemate', completedAt: row.completed_at,
       note: row.note, photoPath: row.photo_path,
     })));
+    this.disputes.set((disputesResult.data ?? []).map((row: any) => ({ id: row.id, completionLogId: row.completion_log_id, reporterId: row.reporter_id, reporterName: row.reporter?.display_name ?? 'Morador', reason: row.reason, status: row.status, resolutionNote: row.resolution_note, createdAt: row.created_at })));
     await this.signPhotoUrls();
     this.openRealtime();
     if (this.refreshTimer === null) this.refreshTimer = window.setInterval(() => void this.refresh(), 60_000);
     return true;
   }
 
-  async createTask(input: { title: string; area: Area; description: string; frequency: string }) {
+  async createTask(input: { title: string; roomId: string; description: string; frequency: string; points: number }) {
+    const room = this.rooms().find((item) => item.id === input.roomId);
+    if (!room) throw new Error('Escolha um cômodo válido.');
     if (!this.client) {
       const now = new Date().toISOString();
-      this.tasks.update((items) => [...items, { ...input, id: crypto.randomUUID(), status: 'open', createdAt: now, availableAt: now }]);
+      this.tasks.update((items) => [...items, { ...input, area: room.name, id: crypto.randomUUID(), status: 'open', createdAt: now, availableAt: now, activityGroupId: crypto.randomUUID() }]);
       return;
     }
-    const { error } = await this.client.from('tasks').insert(input);
+    const member = this.currentMember();
+    const { error } = await this.client.from('tasks').insert({ title: input.title, room_id: room.id, area: room.name, description: input.description, frequency: input.frequency, points: input.points, household_id: (await this.client.from('profiles').select('household_id').eq('id', member!.id).single()).data?.household_id, created_by: member!.id });
     if (error) throw error;
     await this.refresh();
   }
@@ -116,11 +133,12 @@ export class SupabaseService {
     if (!member) throw new Error('Entre novamente para continuar.');
     if (!this.client) {
       const url = URL.createObjectURL(image);
-      const log: CompletionLog = { id: crypto.randomUUID(), taskId: task.id, taskTitle: task.title, area: task.area, memberId: member.id, memberName: member.displayName, completedAt: new Date().toISOString(), note: note || null, photoPath: url, photoUrl: url };
+      const log: CompletionLog = { id: crypto.randomUUID(), taskId: task.id, taskTitle: task.title, area: task.area, memberId: member.id, memberName: member.displayName, completedAt: new Date().toISOString(), note: note || null, photoPath: url, photoUrl: url, activityGroupId: task.activityGroupId, pointsEarned: task.points, roomName: task.area, roomEmoji: this.rooms().find((room) => room.id === task.roomId)?.emoji ?? '🏠' };
       this.logs.update((items) => [log, ...items]);
       const now = new Date();
       const next = new Date(now);
-      if (task.frequency === 'Daily') next.setDate(next.getDate() + 1);
+      if (task.frequency === 'Ongoing') next.setSeconds(next.getSeconds());
+      else if (task.frequency === 'Daily') next.setDate(next.getDate() + 1);
       else if (task.frequency === 'Several times a week') next.setDate(next.getDate() + 3);
       else if (task.frequency === 'Weekly') next.setDate(next.getDate() + 7);
       else if (task.frequency === 'Monthly') next.setMonth(next.getMonth() + 1);
@@ -140,6 +158,47 @@ export class SupabaseService {
       if (refreshed) await this.client.storage.from('completion-photos').remove([imagePath]);
       throw new Error('Não foi possível registrar a tarefa. Ela pode já ter sido concluída por outra pessoa.');
     }
+    await this.refresh();
+  }
+
+  async createRoom(input: { name: string; emoji: string }) {
+    const member = this.currentMember();
+    if (!member) throw new Error('Entre novamente para continuar.');
+    if (!this.client) {
+      if (this.rooms().some((room) => room.name.toLowerCase() === input.name.toLowerCase())) throw new Error('Já existe um cômodo com esse nome.');
+      this.rooms.update((rooms) => [...rooms, { ...input, id: crypto.randomUUID() }]);
+      return;
+    }
+    const { data: profile } = await this.client.from('profiles').select('household_id').eq('id', member.id).single();
+    const { error } = await this.client.from('rooms').insert({ ...input, household_id: profile?.household_id, created_by: member.id });
+    if (error) throw error;
+    await this.refresh();
+  }
+
+  async contestCompletion(logId: string, reason: string) {
+    const member = this.currentMember();
+    if (!member) throw new Error('Entre novamente para continuar.');
+    const log = this.logs().find((item) => item.id === logId);
+    if (!log || log.memberId === member.id) throw new Error('Não é possível contestar esta atividade.');
+    if (!this.client) {
+      this.disputes.update((disputes) => [...disputes, { id: crypto.randomUUID(), completionLogId: logId, reporterId: member.id, reporterName: member.displayName, reason, status: 'pending', resolutionNote: null, createdAt: new Date().toISOString() }]);
+      return;
+    }
+    const { data: profile } = await this.client.from('profiles').select('household_id').eq('id', member.id).single();
+    const { error } = await this.client.from('completion_disputes').insert({ household_id: profile?.household_id, completion_log_id: logId, reporter_id: member.id, reason });
+    if (error) throw error;
+    await this.refresh();
+  }
+
+  async resolveDispute(id: string, status: 'accepted' | 'dismissed') {
+    const member = this.currentMember();
+    if (!member || member.role !== 'admin') throw new Error('Somente o administrador pode avaliar contestações.');
+    if (!this.client) {
+      this.disputes.update((items) => items.map((item) => item.id === id ? { ...item, status } : item));
+      return;
+    }
+    const { error } = await this.client.from('completion_disputes').update({ status, resolved_by: member.id, resolved_at: new Date().toISOString() }).eq('id', id).eq('status', 'pending');
+    if (error) throw error;
     await this.refresh();
   }
 
@@ -179,6 +238,8 @@ export class SupabaseService {
     this.realtimeChannel = this.client.channel('homie-house-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => void this.refresh())
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'completion_logs' }, () => void this.refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => void this.refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'completion_disputes' }, () => void this.refresh())
       .subscribe();
   }
 

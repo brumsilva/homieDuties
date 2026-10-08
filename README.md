@@ -1,6 +1,8 @@
 # Homie Duties
 
-Aplicação Angular mobile first para organizar as tarefas de uma casa compartilhada por cinco pessoas. A lista inicial cobre cozinha, banheiro e corredor com carpete. Qualquer morador pode assumir uma tarefa; ao concluir, registra o responsável, o horário, uma observação opcional e uma foto obrigatória. O histórico mostra as fotos privadas por links temporários do Supabase Storage. Atualizações de tarefas e atividade são compartilhadas entre dispositivos por Supabase Realtime.
+Aplicação Angular mobile first para organizar as atividades de uma casa compartilhada por até cinco pessoas. Os moradores podem adicionar cômodos, criar atividades com pontos e marcar a frequência como diária, semanal, mensal, sob demanda ou sempre disponível. Atividades contínuas, como guardar talheres e levar o lixo para fora, voltam à lista imediatamente após cada conclusão e podem ser repetidas várias vezes no mesmo dia. Cada registro inclui quem fez, data, hora, observação opcional e foto obrigatória.
+
+O histórico conserva os registros e permite que outro morador envie uma contestação para revisão do administrador. A aba Pontos mostra, para cada atividade, quem mais e quem menos concluiu e os pontos acumulados. Quando o administrador aceita uma contestação, aqueles pontos deixam de contar no ranking; o registro continua visível com seu estado de revisão. As fotos privadas são exibidas por links temporários do Supabase Storage. Atualizações de tarefas, cômodos e contestações são compartilhadas entre dispositivos por Supabase Realtime.
 
 O visual usa cartões e uma energia lúdica inspirados em Duels.ink, adaptados para uma ferramenta doméstica acolhedora. O projeto usa Tailwind CSS v4 e componentes Angular acessíveis. A biblioteca shadcn/ui é voltada a React; por isso, o app aplica padrões de composição semelhantes sem usar o CLI React.
 
@@ -65,10 +67,11 @@ A função de configuração cria usuários no Supabase Auth. Ela deriva uma sen
 
 - `households`, `profiles`, `tasks` e `completion_logs` ficam no Postgres, com RLS habilitado. Todos os moradores podem consultar a lista e o histórico da mesma casa; só a Edge Function autenticada permite que a pessoa administradora crie perfis ou redefina PINs.
 - A conclusão usa uma única RPC transacional. Ela confirma o usuário autenticado, a tarefa aberta, a casa e a foto enviada antes de gravar o log, fechar a tarefa e agendar a próxima ocorrência.
-- A frequência é aplicada após a conclusão: diariamente, a cada três dias para “várias vezes por semana”, semanalmente ou mensalmente. “Quando necessário” não gera outra ocorrência automática.
+- A frequência é aplicada após a conclusão: diariamente, a cada três dias para “várias vezes por semana”, semanalmente ou mensalmente. “Sempre disponível” reabre imediatamente a atividade; “quando necessário” não gera outra ocorrência automática.
+- Cômodos, pontos e contestações usam tabelas com RLS por casa. A relação entre cômodo e tarefa também valida o mesmo `household_id`. Só o administrador pode resolver contestações, e os registros originais não são apagados.
 - O bucket `completion-photos` é privado, aceita imagens de até 8 MB e só permite uploads na pasta do usuário autenticado. As fotos são acessíveis aos moradores da mesma casa por URLs assinadas que expiram após uma hora.
 - Um PIN de quatro dígitos tem somente 10 mil combinações. O segredo HMAC do servidor e o limite persistente de tentativas reduzem tentativas automatizadas, mas um PIN curto continua menos seguro que uma senha longa. Use PINs aleatórios e não compartilhe o PIN de administrador.
-- Esta versão não inclui rodízio de responsáveis nem aprovação por outra pessoa. Qualquer morador pode concluir uma tarefa; o app registra imediatamente quem fez.
+- Não há rodízio automático de responsáveis. Qualquer morador pode concluir uma atividade disponível; o app registra imediatamente quem fez e os pontos definidos para ela.
 
 ## Comandos
 
